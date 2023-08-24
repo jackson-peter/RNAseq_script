@@ -21,7 +21,7 @@ time_id=$(date +"%FT%H%M%S")
 outdir="/home/jpeter/DATA/RNAseq/RNAseq072023/"$time_id"_Analysis"
 mkdir $outdir
 
-edger_script="/home/jpeter/Scripts/RNA_seq/edgeR_analysis.R"
+edger_script="/home/jpeter/Scripts/RNA_seq/RNAseq_script/edgeR_analysis.R"
 
 echo "###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@ hisat2"
 
