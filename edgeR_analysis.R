@@ -8,12 +8,10 @@ library("biomaRt")
 args = commandArgs(trailingOnly=TRUE)
 input_dir=args[1]
 tissue=args[2]
-outdir <- file.path(input_dir, tissue,paste0("edgeR_", tissue))
-
-dir.create(outdir, showWarnings = FALSE)
 suffix=args[3]
+design_type=args[4]
 
-#input_dir <- "~/DATA/RNAseq/RNAseq072023/2023-08-24T111010_Analysis"
+#input_dir <- "~/DATA/RNAseq/RNAseq072023/2023-08-29T093905_Analysis/seeds/"
 #tissue <- "seeds"
 #suffix <- ".gene_models.fCounts.txt"
 
@@ -41,12 +39,20 @@ if (tissue=="seeds") {
 }
 
 
-replicate <- c(rep(1,4), rep(2,4), rep(3,4))
+
+outdir <- file.path(input_dir, paste0("edgeR_", design_type))
+dir.create(outdir, showWarnings = FALSE)
+setwd(outdir)
+
+replicate <- as.factor(c(rep(1,4), rep(2,4), rep(3,4)))
 cds <- DGEList(ft_cnt, group = condition)
 
 names( cds )
 head(cds$counts) # original count matrix
 cds$samples # contains a summary of your samples
+
+#pseudoCounts <- log2(cds$counts+1)
+
 
 #selr <- rowSums(cpm(x$counts)>5)>=15 to keep cpm >5 in fifteen or more samples
 
@@ -55,17 +61,31 @@ cds <- cds[keep, , keep.lib.sizes=FALSE]
 #calculate normalisation factor
 cds <- calcNormFactors(cds)
 cds$samples #give Normalisation factor
+
+
+if (design_type=="simple") {
+  design <- model.matrix(~0+group,data=cds$samples)
+  print(design)
+} else if (design_type=="rep") {
+  design <- model.matrix(~0+group+replicate,data=cds$samples)
+  print(design)
+} else {
+  stop("design should be either 'simple' or 'rep'.")
+}
+write.table(design, file.path(outdir, paste0(tissue, "_design.tsv")), sep="\t")
+
 #method="TMM" is the weighted trimmed mean of M-values (to the reference) proposed by #Robinson and Oshlack (2010), where the weights are from the delta method on Binomial #data. If refColumn is unspecified, the library whose upper quartile is closest to the #mean upper quartile is used.
 
-setwd(outdir)
-
+print("test1")
 ScaleFactors <- cds$samples$lib.size * cds$samples$norm.factors # effective library size
 Exp <- round(t(t(cds$counts)/ScaleFactors) * mean(ScaleFactors)) # standard to round b/c can't have a fraction of a read
 list_universe <- as.vector(row.names(Exp)) # list that will be used for GO analysis latter
 head(cpm(cds))
+print("test2")
 write.table(Exp, paste0(tissue, "_Norm_data_total.txt"), sep="\t", col.names = NA)
 write.table(cpm(cds), paste0(tissue, "_CPM.txt"), sep="\t", col.names = NA)
-cpm(cds)
+#cpm(cds)
+print("test3")
 
 myPalette <- c(rep(c("#000000", "#E69F00", "#56B4E9", "#009E73"),3)) ##color blind colors
 top = nrow(cds[[1]])
@@ -76,15 +96,12 @@ dev.off() # this tells [R] to close and stop writing to the pdf.
 pdf( paste0(tissue,"_MDS_plot_defaut.pdf") , width = 7 , height = 7 ) # in inches
 plotMDS( cds , main = "MDS Plot for all conditions", labels = colnames( cds$counts ),col=myPalette)
 dev.off() # this tells [R] to close and stop writing to the pdf.
+print("test4")
 ##alternative method
 pdf( paste0(tissue,"_MDS_plot_bcv.pdf") , width = 7 , height = 7 ) # in inches
 plotMDS( cds , main = "MDS Plot for all conditions", method = "bcv", labels = colnames( cds$counts ),col=myPalette)
 dev.off()
-
-
-design <- model.matrix(~0+group+replicate,data=cds$samples)
-#design <- model.matrix(~ 0 + cds$samples$group)
-#design
+print("test5")
 
 if (tissue == "seeds") {
   my.contrasts <-makeContrasts(Gcol0_Gheso1=groupG_Col0-groupG_heso1,
@@ -105,24 +122,25 @@ if (tissue == "seeds") {
                                levels=design) 
 }
 
-
+print("test6")
 
 
 dge = estimateGLMCommonDisp(cds, design)
-dge = estimateGLMTagwiseDisp(dge, design) #each gene gets assigned the same dispersion estimate
-dge <- estimateGLMTrendedDisp(dge, design, method="auto")
+dge = estimateGLMTagwiseDisp(dge, design) #each gene gets assigned 
+
+print("test7")
 
 pdf( paste0(tissue,"_MDS_plot_bcv.pdf") , width = 7 , height = 7 ) # in inches
 plotBCV(dge)
 dev.off()
-
+print("test8")
 
 
 # Fit data to the glm model
 fit <- glmFit(dge,design)
 
 addBiomaRtAnnotation <- function(normObj, biomart="plants_mart",
-                                 dataset="athaliana_eg_gene", host="plants.ensembl.org",
+                                 dataset="athaliana_eg_gene", host="https://plants.ensembl.org",
                                  features=c("ensembl_peptide_id","ensembl_transcript_id","ensembl_gene_id",
                                             "external_gene_name"))#, GO=FALSE)
 {
@@ -152,19 +170,43 @@ addBiomaRtAnnotation <- function(normObj, biomart="plants_mart",
 }
 
 # Pairwise comparison (by defaut use genewise dispersion)
-my_test <- function(A) {
+my_test <- function(outdiff) {
+  A <- basename(outdiff)
+  print(A)
   rowtoprint <- as.data.frame(data.frame(comparison=as.character(), up_genes=as.numeric(), down_genes=as.numeric()) )          
   x <- glmLRT(fit, contrast=my.contrasts[,A])
   y<-topTags(x, n = nrow(x$table))$table
+  
+  dt_significant <- decideTestsDGE( x, adjust.method="BH", p.value=0.05)
+  
+  names_sig <- rownames( dge )[ as.logical( dt_significant )]
+  
+  pdf( file.path(outdiff, paste0(A,"_plotsmear.pdf")) , width = 7 , height = 7 ) # in inches
+  plotSmear( x, de.tags = names_sig )
+  dev.off()
+  
   table_up <- subset(y, y$FDR<0.05&y$logFC>0)
-  table_up <- try(addBiomaRtAnnotation(table_up, features="ensembl_gene_id"))
+  table_up2 <- subset(y, y$FDR<0.05&y$logFC>0)
+  print(table_up)
+  print("###")
+  if (nrow(table_up)!=0) {
+    table_up <- try(addBiomaRtAnnotation(table_up, features="ensembl_gene_id"))
+  }
+
+  
   table_down <- subset(y, y$FDR<0.05&y$logFC<0)
-  table_down <- try(addBiomaRtAnnotation(table_down, features="ensembl_gene_id"))
+  print(table_down)
+  print("###")
+  if (nrow(table_down)!=0) {
+    table_down <- try(addBiomaRtAnnotation(table_down, features="ensembl_gene_id"))
+  }
+  
   #print(paste("up", nrow(table_up)), sep="\t")
   #print(paste("down", nrow(table_down)), sep="\t")
   rowtoprint <- as.data.frame(data.frame(comparison=as.character(A), up_genes=as.numeric(nrow(table_up)), down_genes=as.numeric(nrow(table_down)))) 
-  write.table(table_up, paste(i, "up.txt", sep="_"), quote=FALSE, sep="\t", col.names=NA)
-  write.table(table_down, paste(i, "down.txt", sep="_"), quote=FALSE, sep="\t", col.names=NA)
+  write.table(table_up, file.path(outdiff, paste(i, "up.txt", sep="_")), quote=FALSE, sep="\t", col.names=NA)
+  write.table(table_down, file.path(outdiff,paste(i, "down.txt", sep="_")), quote=FALSE, sep="\t", col.names=NA)
+  write.table(dt_significant, file.path(outdiff,paste(i, "dt_signif.txt", sep="_")), quote=FALSE, sep="\t", col.names=NA)
   return(rowtoprint)
   
 }
@@ -173,9 +215,12 @@ my_test <- function(A) {
 recap <- as.data.frame(data.frame(comparison=as.character(), up_genes=as.numeric(), down_genes=as.numeric()) )          
 for (i in colnames(my.contrasts)) {
   print(i)
-  tab <- my_test(i)
+  outdiff=file.path(outdir,i)
+  dir.create(outdiff, showWarnings = F)
+  tab <- my_test(outdiff)
   recap <- as.data.frame(rbind(recap, tab))
   colnames(recap) <- c("comparison", "up_genes", "down_genes")
 }
 
 write.table(recap, paste0(tissue,"_recap_number_withbatch.txt"), quote=FALSE, sep="\t", col.names=NA)
+

@@ -10,12 +10,10 @@ module load snakemake
 module load fastqc
 module load hisat2
 module load samtools
-module load cutadapt
-module load trim_galore
 # activate conda env with subread
 
 ref_idx="/home/jpeter/DATA/ReferenceGenomes/Athaliana/TAIR10/hisat2_indexes/TAIR10_chr_all"
-gff="/home/jpeter/DATA/ReferenceGenomes/Athaliana/TAIR10/TAIR10_GFF3_genes_transposons.gff"
+gff="/home/jpeter/DATA/ReferenceGenomes/Athaliana/Araport11/Araport11_GTF_genes_transposons.Jul2023.gtf"
 
 time_id=$(date +"%FT%H%M%S")
 outdir="/home/jpeter/DATA/RNAseq/RNAseq072023/"$time_id"_Analysis"
@@ -57,11 +55,11 @@ wait
 
 echo "###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@ featurecounts"
 
-featureCounts -O -s 2 -T 4 -t "gene" -g "ID" -p -a $gff -o $outdir/seeds.gene_models.fCounts.txt $outdir/seeds/*/hisat2/*.sorted.bam
-featureCounts -O -s 2 -T 4 -t "gene" -g "ID" -p -a $gff -o $outdir/flowers.gene_models.fCounts.txt $outdir/flowers/*/hisat2/*.sorted.bam
+featureCounts -O -s 2 -T 4 -t "gene" -g "gene_id" -p -a $gff -o $outdir/seeds/seeds.gene_models.fCounts.txt $outdir/seeds/*/hisat2/*.sorted.bam
+featureCounts -O -s 2 -T 4 -t "gene" -g "gene_id" -p -a $gff -o $outdir/flowers/flowers.gene_models.fCounts.txt $outdir/flowers/*/hisat2/*.sorted.bam
 
 echo "###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@###@@@ edgeR script"
 
-Rscript $edger_script $outdir "seeds" ".gene_models.fCounts.txt"
-Rscript $edger_script $outdir "flowers" ".gene_models.fCounts.txt"
+echo Rscript $edger_script $outdir/seeds "seeds" ".gene_models.fCounts.txt"
+echo Rscript $edger_script $outdir/flowers "flowers" ".gene_models.fCounts.txt"
 
